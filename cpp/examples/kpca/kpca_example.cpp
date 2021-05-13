@@ -139,13 +139,14 @@ int main(int argc, char *argv[]) {
     std::cout << "gamma " << prms.kernel.gamma << std::endl;
     std::cout << "coef0 " << prms.kernel.coef0 << std::endl;
     std::cout << "kernel " << prms.kernel.kernel << std::endl;
-    // kpcaFit(handle, data_tranposed, alphas, lambdas, prms);
+    kpcaFit(handle, data_tranposed, alphas, lambdas, prms);
     // std::cout << "kpcaFit Done" << std::endl;
     // kpcaTransform(handle, data_tranposed, alphas, lambdas, trans_data, prms);
     CUDA_RT_CALL(cudaStreamSynchronize(stream));
     CUDA_RT_CALL(cudaDeviceSynchronize());
     TimeLogger::timeLog *curr_kernel = tl->start(kernel);
-    kpcaFitTransform(handle, data_tranposed, trans_data, alphas, lambdas, prms);
+    kpcaFit(handle, data_tranposed, alphas, lambdas, prms);
+    kpcaTransform(handle, data_tranposed, alphas, lambdas, trans_data, prms);
     tl->stop(curr_kernel);
     printf("CUML KPCA Kernel %s on file %s TOTAL Time measured: %f ms.\n", kernel.c_str(), filename.c_str(), curr_kernel->time_ms);
     CUDA_RT_CALL(cudaStreamSynchronize(stream));
