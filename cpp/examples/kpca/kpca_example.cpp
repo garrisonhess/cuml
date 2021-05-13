@@ -80,14 +80,14 @@ int main(int argc, char *argv[]) {
   //  load data file
   std::string dataset = "iris";
   std::string filename = dataset + ".csv";
-  std::cout << "Here\n" << " /home/tomas/618/kernelpca/data/" << filename << std::endl;
-  csvInfo csv = read_csv("/home/tomas/618/kernelpca/data/" + filename);
+  std::cout << "Here\n" << "/home/gh/kernelpca/data/" << filename << std::endl;
+  csvInfo csv = read_csv("/home/gh/kernelpca/data/" + filename);
   std::cout << "matrix[0][0] " << csv.matrix[0] << ", size " << csv.matrix.size() << std::endl;
   std::cout << "rows " << csv.rows << " cols " << csv.cols << std::endl;
 
   // //  number of principal components to find
-  int n_components = 4;
-  TimeLogger *tl = new TimeLogger(csv.rows, csv.cols, n_components, "/home/tomas/618/kernelpca/logs/CUMLSKPCA_" + filename);
+  int n_components = csv.rows;
+  TimeLogger *tl = new TimeLogger(csv.rows, csv.cols, n_components, "/home/gh/kernelpca/logs/CUMLKPCA_" + filename);
   ML::paramsKPCA prms;
   float* data = nullptr;
   float* data_tranposed = nullptr;
@@ -100,7 +100,7 @@ int main(int argc, char *argv[]) {
   CUDA_RT_CALL(cudaMalloc(&data_tranposed,
                             len * sizeof(float)));
   CUDA_RT_CALL(cudaMalloc(&trans_data,
-                            len * sizeof(float)));
+                            csv.rows * csv.rows * sizeof(float)));
   CUDA_RT_CALL(cudaMalloc(&alphas,
                             csv.rows * csv.rows * sizeof(float)));
   CUDA_RT_CALL(cudaMalloc(&lambdas,
@@ -125,11 +125,14 @@ int main(int argc, char *argv[]) {
   prms.n_rows = csv.rows;
   prms.n_components = n_components;
   prms.algorithm = ML::solver::COV_EIG_JACOBI;
+
   std::vector<std::pair<std::string, MLCommon::Matrix::KernelParams>> kernels;
-  kernels.push_back(std::make_pair("RBF",MLCommon::Matrix::KernelParams{MLCommon::Matrix::RBF, 0, (float)1.0/(float)csv.rows, 1.0}));
-  kernels.push_back(std::make_pair("LINEAR",MLCommon::Matrix::KernelParams{MLCommon::Matrix::LINEAR, 0, 0.0, 0.0}));
-  kernels.push_back(std::make_pair("POLYNOMIAL",MLCommon::Matrix::KernelParams{MLCommon::Matrix::POLYNOMIAL, 3, (float)1.0/(float)csv.rows, 1}));
+  // kernels.push_back(std::make_pair("RBF",MLCommon::Matrix::KernelParams{MLCommon::Matrix::RBF, 0, (float)1.0/(float)csv.cols, 1.0}));
+  // kernels.push_back(std::make_pair("LINEAR",MLCommon::Matrix::KernelParams{MLCommon::Matrix::LINEAR, 0, 0.0, 0.0}));
+  kernels.push_back(std::make_pair("POLYNOMIAL",MLCommon::Matrix::KernelParams{MLCommon::Matrix::POLYNOMIAL, 3, (float)1.0/(float)csv.cols, 1}));
   TimeLogger::timeLog *total_time = tl->start("Total Time");
+
+
   for(int i = 0; i < kernels.size(); i++) {
     std::pair<std::string, MLCommon::Matrix::KernelParams> kpair = kernels[i];
     std::string kernel = kpair.first;
@@ -139,24 +142,32 @@ int main(int argc, char *argv[]) {
     std::cout << "gamma " << prms.kernel.gamma << std::endl;
     std::cout << "coef0 " << prms.kernel.coef0 << std::endl;
     std::cout << "kernel " << prms.kernel.kernel << std::endl;
-    kpcaFit(handle, data_tranposed, alphas, lambdas, prms);
-    // std::cout << "kpcaFit Done" << std::endl;
-    // kpcaTransform(handle, data_tranposed, alphas, lambdas, trans_data, prms);
+
+
+
     CUDA_RT_CALL(cudaStreamSynchronize(stream));
     CUDA_RT_CALL(cudaDeviceSynchronize());
+
+
+
     TimeLogger::timeLog *curr_kernel = tl->start(kernel);
     kpcaFit(handle, data_tranposed, alphas, lambdas, prms);
     kpcaTransform(handle, data_tranposed, alphas, lambdas, trans_data, prms);
     tl->stop(curr_kernel);
-    printf("CUML KPCA Kernel %s on file %s TOTAL Time measured: %f ms.\n", kernel.c_str(), filename.c_str(), curr_kernel->time_ms);
-    CUDA_RT_CALL(cudaStreamSynchronize(stream));
+
     // raft::print_device_vector("alphas: ", alphas,
     //                             csv.rows * n_components, std::cout);
-    raft::print_device_vector("lambdas: ", lambdas,
-                                n_components, std::cout);
+    // raft::print_device_vector("lambdas: ", lambdas,
+    //                             n_components, std::cout);
     // raft::print_device_vector("trans_data: ", trans_data,
     //                             n_components * csv.rows, std::cout);
+    printf("CUML KPCA Kernel %s on file %s TOTAL Time measured: %f ms.\n", kernel.c_str(), filename.c_str(), curr_kernel->time_ms);
 
+
+
+
+
+    CUDA_RT_CALL(cudaStreamSynchronize(stream));
     CUDA_RT_CALL(cudaMemcpyAsync(alphas_h, alphas,
                                   (size_t) csv.rows * n_components * sizeof(float),
                                   cudaMemcpyDeviceToHost, stream));
@@ -167,10 +178,13 @@ int main(int argc, char *argv[]) {
                                   n_components * sizeof(float) * csv.rows,
                                   cudaMemcpyDeviceToHost, stream));
     CUDA_RT_CALL(cudaStreamSynchronize(stream));
-    std::string outFilePath = "/home/tomas/618/kernelpca/output/";
-    write_matrix_csv(outFilePath + "CUMLSKPCA_" + dataset + "_" + kernel + "_lambdas.csv", lambdas_h, n_components, 1);
-    write_matrix_csv(outFilePath + "CUMLSKPCA_" + dataset + "_" + kernel + "_alphas.csv", alphas_h, n_components, csv.rows);
-    write_matrix_csv(outFilePath + "CUMLSKPCA_" + dataset + "_" + kernel + "_trans_data.csv", trans_data_h, n_components, csv.rows);
+
+
+    //  write results
+    std::string outFilePath = "/home/gh/kernelpca/output/";
+    write_matrix_csv(outFilePath + "CUMLKPCA_" + dataset + "_" + kernel + "_lambdas.csv", lambdas_h, n_components, 1);
+    write_matrix_csv(outFilePath + "CUMLKPCA_" + dataset + "_" + kernel + "_alphas.csv", alphas_h, n_components, csv.rows);
+    write_matrix_csv(outFilePath + "CUMLKPCA_" + dataset + "_" + kernel + "_trans_data.csv", trans_data_h, n_components, csv.rows);
     CUDA_RT_CALL(cudaStreamSynchronize(stream));
   }
   tl->stop(total_time);
